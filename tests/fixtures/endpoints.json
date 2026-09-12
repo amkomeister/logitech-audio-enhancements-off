@@ -1,0 +1,7 @@
+[
+  { "name": "matching Off endpoint", "deviceName": "Logitech PRO X Wireless Gaming Headset", "deviceState": 1, "sysFx": 1, "expectedCount": 1, "expectedOff": true, "expectedKnown": true },
+  { "name": "matching enabled endpoint", "deviceName": "Logitech PRO X Wireless Gaming Headset", "deviceState": 1, "sysFx": 0, "expectedCount": 1, "expectedOff": false, "expectedKnown": true },
+  { "name": "missing property remains unknown", "deviceName": "Logitech PRO X Wireless Gaming Headset", "deviceState": 1, "sysFx": null, "expectedCount": 1, "expectedOff": false, "expectedKnown": false },
+  { "name": "unrelated device excluded", "deviceName": "Synthetic Other Speaker", "deviceState": 1, "sysFx": 0, "expectedCount": 0, "expectedOff": false, "expectedKnown": false },
+  { "name": "disconnected endpoint excluded", "deviceName": "Logitech PRO X Wireless Gaming Headset", "deviceState": 4, "sysFx": 0, "expectedCount": 0, "expectedOff": false, "expectedKnown": false }
+]

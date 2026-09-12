@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$DeviceNamePattern = 'Logitech PRO X Wireless Gaming Headset',
     [string]$OffLabel,
     [int]$EndpointWaitSeconds = 120,
@@ -8,15 +8,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$logPath = Join-Path $PSScriptRoot 'LogitechAudioEnhancementsOff.log'
+. (Join-Path $PSScriptRoot 'StereoGuard.Core.ps1')
 $comboAutomationId = 'SystemSettings_Audio_Output_Enhance_Audio_ComboBox'
 $renderRegistryPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render'
 $deviceNameProperty = '{b3f8fa53-0004-438e-9003-51a46e139bfc},6'
 
 function Write-UiLog {
     param([string]$Message)
-    ('{0:u} {1}' -f (Get-Date), $Message) |
-        Out-File -LiteralPath $logPath -Append -Encoding utf8
+    # Never persist raw messages, device names, exception text or stack traces.
+    if ($Message.StartsWith('ERROR')) { Write-GuardLog CorrectionFailed }
+    elseif ($Message.StartsWith('SUCCESS')) { Write-GuardLog Corrected }
 }
 
 function Find-TargetEndpoint {
@@ -128,6 +129,15 @@ function Find-OffItem {
 }
 
 try {
+    if ($VerifyOnly) {
+        $states = @(Get-LogitechEndpointState -DeviceNamePattern $DeviceNamePattern)
+        if ($states.Count -eq 1 -and $states[0].IsOff) { Write-Output 'Off'; exit 0 }
+        Write-Output 'Off could not be confirmed (absent, ambiguous, enabled or unsupported property).'
+        exit 3
+    }
+    if (Get-Process SystemSettings -ErrorAction SilentlyContinue) {
+        throw 'Close Windows Settings before running a correction.'
+    }
     Add-Type -AssemblyName UIAutomationClient
     Add-Type -AssemblyName UIAutomationTypes
 
@@ -152,10 +162,26 @@ try {
         throw ('No active playback endpoint matched "' + $DeviceNamePattern + '".')
     }
 
-    $settingsWasOpen = [bool](Get-Process SystemSettings -ErrorAction SilentlyContinue)
     $settingsUri = 'ms-settings:sound-properties?endpointId=' +
         [uri]::EscapeDataString($target.EndpointId)
-    Start-Process $settingsUri
+    Invoke-GuardSettingsSession -KeepWindow:$KeepWindow -IsOpen {
+        [bool](Get-Process SystemSettings -ErrorAction SilentlyContinue)
+    } -Launch {
+        $launchTime = [datetime]::UtcNow
+        $process = Start-Process $settingsUri -PassThru
+        # The Shell may not return a process for an activated packaged application.
+        # Never infer ownership from an arbitrary process appearing after launch.
+        $owned = $process -and $process.ProcessName -eq 'SystemSettings' -and $process.StartTime.ToUniversalTime() -ge $launchTime
+        [pscustomobject]@{ Owned = [bool]$owned; Process = $process }
+    } -Close {
+        param($lease)
+        $process = $lease.Process
+        # Keep the exact process handle returned by launch; do not search by name or kill.
+        if (-not $process.HasExited -and -not $process.CloseMainWindow()) {
+            throw 'Owned Settings window did not accept the close request.'
+        }
+    } -Correct {
+        param($lease)
     $root = [System.Windows.Automation.AutomationElement]::RootElement
 
     $windowDeadline = (Get-Date).AddSeconds(25)
@@ -215,21 +241,12 @@ try {
 
     Write-UiLog 'SUCCESS Audio enhancements=Off'
 
-    if (-not $KeepWindow -and -not $settingsWasOpen) {
-        try {
-            $windowPattern = $window.GetCurrentPattern(
-                [System.Windows.Automation.WindowPattern]::Pattern
-            )
-            $windowPattern.Close()
-        }
-        catch {
-            # The setting is saved even if Windows Settings cannot be closed.
-        }
     }
 
     exit 0
 }
 catch {
-    Write-UiLog ('ERROR ' + $_.Exception.Message + ' | ' + $_.ScriptStackTrace)
+    Write-GuardLog CorrectionFailed -ErrorCode $_.Exception.HResult
+    Write-Output 'Correction failed. Check connection, unlocked desktop and the Off control.'
     exit 1
 }

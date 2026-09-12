@@ -1,37 +1,19 @@
-param(
-    [string]$TaskName = 'Keep Logitech Audio Enhancements Off',
-    [int]$DelaySeconds = 25
-)
-
+[CmdletBinding(SupportsShouldProcess)]
+param([ValidateRange(0,300)][int]$DelaySeconds = 25)
 $ErrorActionPreference = 'Stop'
-$targetScript = Join-Path $PSScriptRoot 'Set-LogitechAudioEnhancementsOff.ps1'
-
-if (-not (Test-Path -LiteralPath $targetScript)) {
-    throw "Set-LogitechAudioEnhancementsOff.ps1 was not found beside Install.ps1."
-}
-
+$taskName = 'Logitech Stereo Guard 2'
+$targetScript = Join-Path $PSScriptRoot 'Watch-LogitechStereo.ps1'
+if (-not (Test-Path -LiteralPath $targetScript)) { throw 'Guard script is missing.' }
+if ($targetScript.Contains('"')) { throw 'Unsupported installation path.' }
+if (-not $PSCmdlet.ShouldProcess($taskName, 'Create a new isolated logon task (existing tasks are never overwritten)')) { return }
+if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { throw 'Task already exists. Uninstall this version first.' }
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$powerShellExe = Join-Path $PSHOME 'powershell.exe'
-$arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' +
-    $targetScript + '"'
-
-$action = New-ScheduledTaskAction -Execute $powerShellExe -Argument $arguments
+$exe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $targetScript + '"'
+$action = New-ScheduledTaskAction -Execute $exe -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
 $trigger.Delay = 'PT' + $DelaySeconds + 'S'
 $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-
-$registerParameters = @{
-    TaskName = $TaskName
-    Action = $action
-    Trigger = $trigger
-    Principal = $principal
-    Settings = $settings
-    Description = 'Turns off Windows audio enhancements for a Logitech PRO X Wireless headset after sign-in.'
-    Force = $true
-}
-Register-ScheduledTask @registerParameters | Out-Null
-
-Write-Host "Installed scheduled task: $TaskName"
-Write-Host "It will run $DelaySeconds seconds after sign-in."
-Write-Host 'Keep this folder in its current location while the task is installed.'
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([timespan]::Zero) -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'LogitechStereoGuard2-owned-v2' | Out-Null
+Write-Output 'Installed Logitech Stereo Guard 2. Starts at next sign-in. Keep this folder in place.'

@@ -1,3 +1,6 @@
 *.log
-Desktop.ini
-Thumbs.db
+*.log.*
+captures/
+logs/
+local/
+*.local.json

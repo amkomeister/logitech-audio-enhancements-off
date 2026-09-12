@@ -1,96 +1,107 @@
-# Logitech Audio Enhancements Off
+# Logitech Stereo Guard 2
 
-A small PowerShell utility for Windows 11 that sets **Audio enhancements** to
-**Off** for an active Logitech PRO X Wireless Gaming Headset after sign-in.
+Windows 11 / Windows PowerShell 5.1 utility that keeps Audio enhancements Off
+for one matching active Logitech playback endpoint. No telemetry, downloads,
+driver changes, registry writes, ACL changes or persistent execution-policy changes.
 
-This can be useful when Logitech's HX2E processing is automatically restored
-and you prefer unprocessed stereo output.
+## Operation and limitations
 
-## Privacy and safety
+A hidden logon worker listens to Win32_DeviceChangeEvent, coalesces notification
+bursts for three seconds, and checks active playback endpoints. A read-only
+check every 60 seconds catches missed events and G HUB property resets. If WMI
+is unavailable, periodic checks continue. A mutex permits one worker per session.
 
-- No telemetry or network access.
-- No usernames, computer-specific paths, endpoint IDs, or personal logs are
-  included in this repository.
-- The script does not overclock hardware, replace drivers, edit registry
-  permissions, or disable Windows security features.
-- A local log is created beside the script. `*.log` is excluded from Git.
+Already-Off endpoints require no UI. Missing or ambiguous matches never cause
+correction. Otherwise the existing Windows Settings UI setter selects Off.
+**A corrective action can briefly display Settings.** Existing Settings windows
+are left alone. Correction attempts are limited to once every five minutes;
+this also delays closely spaced reconnects. Locked desktops may prevent correction.
+The UI automation ID is not a promised stable Windows API.
 
-## Requirements
+Microsoft documents [audio endpoint properties](https://learn.microsoft.com/en-us/windows/win32/coreaudio/audio-endpoint-properties)
+as properties clients should read, while [OpenPropertyStore](https://learn.microsoft.com/en-us/windows/win32/api/mmdeviceapi/nf-mmdeviceapi-immdevice-openpropertystore)
+restricts non-admin clients to reads. No supported silent setter is established
+here; unsupported registry writes and permission changes are deliberately avoided.
+The read-only Disable_SysFx registry check is driver-dependent. Missing values
+mean unknown, not confirmed Off. A successful check does not prove that every
+possible processing stage in a particular audio stream is disabled.
 
-- Windows 11
-- Windows PowerShell 5.1
-- Logitech PRO X Wireless Gaming Headset with the Logitech audio driver
-- Logitech G HUB is recommended
-
-The utility uses the stable Windows Settings automation ID for the Audio
-enhancements control. It recognizes the visible Off label in several common
-Windows display languages, including English and Norwegian.
-
-## Install
-
-1. Download the repository as a ZIP and extract it to a permanent folder.
-2. Right-click Start, open **Windows PowerShell**, and change to that folder.
-3. Run:
-
-   ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
-   ```
-
-The installer creates a scheduled task named
-`Keep Logitech Audio Enhancements Off`. It runs 25 seconds after you sign in.
-Administrator privileges are not requested by the scripts.
-
-To run it immediately:
+## Verify without audio writes or Settings UI
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Set-LogitechAudioEnhancementsOff.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Set-LogitechAudioEnhancementsOff.ps1 -VerifyOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Watch-LogitechStereo.ps1 -VerifyOnly -Once
 ```
 
-To verify the current setting without changing it:
+Exit 0 confirms one active endpoint is Off; exit 3 means unconfirmed, exit 1
+means observation failure. Omit -Once for continuous observation; Ctrl+C stops
+it. Watch mode still writes sanitized status logs in verify-only mode.
+
+## Install and uninstall
+
+Extract to a permanent folder and open Windows PowerShell there:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Set-LogitechAudioEnhancementsOff.ps1 -VerifyOnly -KeepWindow
-```
-
-## Other Logitech device names or display languages
-
-The default device-name pattern is `Logitech PRO X Wireless Gaming Headset`.
-You can supply a different regular expression:
-
-```powershell
-.\Set-LogitechAudioEnhancementsOff.ps1 -DeviceNamePattern 'Logitech PRO X 2.*'
-```
-
-If the script does not recognize the translated Off label, pass the exact text
-shown by Windows:
-
-```powershell
-.\Set-LogitechAudioEnhancementsOff.ps1 -OffLabel 'Off'
-```
-
-## Uninstall
-
-Run:
-
-```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1 -WhatIf
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1 -WhatIf
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1
 ```
 
-This removes only the scheduled task. You can then delete the extracted folder
-manually.
+Installation creates Logitech Stereo Guard 2, a new limited-privilege interactive
+logon task starting 25 seconds after next sign-in. Existing tasks are never
+overwritten. Keep the folder in place. Organization policy may deny installation.
+Uninstall checks its ownership marker and script path, stops and removes only
+that task, and preserves audio settings and logs. Legacy tasks remain untouched;
+manually review and disable an old guard task to avoid overlapping corrections.
+Do not run a manual worker alongside the scheduled worker.
 
-## Known limitation
+Start immediately or perform one correction:
 
-The scheduled task runs after Windows sign-in. If G HUB resets the setting when
-the headset is power-cycled later in the same session, run the main script
-again. This version does not continuously monitor the headset.
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Watch-LogitechStereo.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Set-LogitechAudioEnhancementsOff.ps1 -GHubWaitSeconds 0
+```
 
-## Troubleshooting
+Both scripts accept a narrow -DeviceNamePattern regular expression; the default
+is Logitech PRO X Wireless Gaming Headset. The installer uses that default;
+custom devices require a manually configured task action. The one-shot setter
+supports -OffLabel for another language and -KeepWindow for UI troubleshooting.
 
-Check `LogitechAudioEnhancementsOff.log` in the extracted folder. If more than
-one playback device matches, use a narrower `-DeviceNamePattern`. If Windows is
-using an unsupported display-language label, pass `-OffLabel`.
+## Data flow and troubleshooting
 
-## License
+Local registry/process/event reads feed a decision, optional UI correction and
+status logging. Device names and endpoint IDs remain in memory. Logs under the
+current user's local app-data LogitechStereoGuard2 folder contain only fixed
+status codes, UTC timestamps and numeric errors. They rotate at 1 MiB, retaining
+one previous file. No names, paths, device IDs, raw errors or stack traces are
+logged. Git excludes logs, captures and local configuration. Legacy version logs
+could contain device names or paths: do not publish them.
 
-MIT
+Absent: wait for connection. Ambiguous: narrow the name pattern. SettingsBusy:
+close Settings. VerifyRequired: Off is not confirmed. CorrectionFailed: check the
+desktop is unlocked and the Off control exists; run the setter interactively.
+EventFallback: periodic checking continues without WMI notifications.
+
+## Tests
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
+```
+
+Offline tests cover decision safety, cooldown, syntax and installer WhatIf.
+Windows CI also checks PSScriptAnalyzer errors. Actual audio writes, scheduled
+task installation and physical headset/G HUB reload behavior are manual
+acceptance tests, not established by offline tests. Verify the correct Settings
+page stays Off after a headset reconnect and G HUB restart on your machine.
+
+MIT. Version 2.0.0.
+
+Settings is checked again immediately before opening, after device/G HUB waits.
+Cleanup runs after success and failure, unless -KeepWindow is set. It only asks
+the exact SystemSettings process returned by launch to close its main window;
+it never searches for and terminates another Settings process. If Windows Shell
+does not return an owning process for packaged-app activation, automatic cleanup
+cannot be proven safe and is skipped. Close that Settings window manually before
+the next guard correction. A user opening Settings at the exact launch instant
+is an unavoidable race in the Shell/UI automation interface.

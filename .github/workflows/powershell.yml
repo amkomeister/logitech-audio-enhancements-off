@@ -1,0 +1,19 @@
+name: PowerShell checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline regression tests
+        shell: powershell
+        run: .\tests\Run-Tests.ps1
+      - name: Static analysis
+        shell: powershell
+        run: |
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          $issues = @(Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error)
+          $issues | Format-Table
+          if ($issues.Count) { throw 'Static analysis failed.' }
